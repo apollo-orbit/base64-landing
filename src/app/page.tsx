@@ -11,18 +11,42 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false)
   const [mode, setMode] = useState<'encode' | 'decode'>('encode')
 
-  const handleTextConvert = () => {
+  const [converting, setConverting] = useState(false)
+  const [rateInfo, setRateInfo] = useState<{remaining: number, limit: number} | null>(null)
+
+  const handleTextConvert = async () => {
     if (!textInput.trim()) return
-    if (mode === 'encode') {
-      const encoded = btoa(unescape(encodeURIComponent(textInput)))
-      setTextOutput(encoded)
-    } else {
-      try {
-        const decoded = decodeURIComponent(escape(atob(textInput)))
-        setTextOutput(decoded)
-      } catch {
-        setTextOutput('Error: Invalid Base64 string')
+    setConverting(true)
+    try {
+      const res = await fetch('/api/convert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: mode, data: textInput })
+      })
+      
+      // Get rate limit info from headers
+      const remaining = res.headers.get('X-RateLimit-Remaining')
+      const limit = res.headers.get('X-RateLimit-Limit')
+      if (remaining && limit) {
+        setRateInfo({ remaining: parseInt(remaining), limit: parseInt(limit) })
       }
+      
+      if (res.status === 429) {
+        const data = await res.json()
+        setTextOutput(`Rate limit exceeded. ${data.error}`)
+        return
+      }
+      
+      const data = await res.json()
+      if (data.error) {
+        setTextOutput(`Error: ${data.error}`)
+      } else {
+        setTextOutput(data.result)
+      }
+    } catch (error) {
+      setTextOutput('Error: Failed to connect to API')
+    } finally {
+      setConverting(false)
     }
   }
 
@@ -65,9 +89,9 @@ export default function Home() {
             <a href="#tools" className="text-gray-600 hover:text-gray-900 text-sm">Tools</a>
             <a href="#api" className="text-gray-600 hover:text-gray-900 text-sm">API</a>
             <a href="#docs" className="text-gray-600 hover:text-gray-900 text-sm">Docs</a>
-            <button className="bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-900 transition">
+            <a href="/auth/signin" className="bg-blue-950 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-900 transition">
               Get API Key
-            </button>
+            </a>
           </div>
         </div>
       </nav>
@@ -129,10 +153,16 @@ export default function Home() {
               
               <button
                 onClick={handleTextConvert}
-                className="w-full mt-4 bg-blue-950 text-white py-3 rounded-xl font-medium hover:bg-blue-900 transition"
+                disabled={converting}
+                className="w-full mt-4 bg-blue-950 text-white py-3 rounded-xl font-medium hover:bg-blue-900 transition disabled:opacity-50"
               >
-                {mode === 'encode' ? 'Encode to Base64' : 'Decode from Base64'}
+                {converting ? 'Converting...' : mode === 'encode' ? 'Encode to Base64' : 'Decode from Base64'}
               </button>
+              {rateInfo && (
+                <p className="text-gray-400 text-xs mt-2 text-center">
+                  {rateInfo.remaining}/{rateInfo.limit} requests remaining today
+                </p>
+              )}
 
               {textOutput && (
                 <div className="mt-4 relative">
@@ -279,9 +309,9 @@ export default function Home() {
                 <p className="text-gray-900 font-semibold">10,000 req/day</p>
               </div>
               <div className="w-px h-10 bg-gray-200" />
-              <button className="bg-blue-950 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-900 transition text-sm">
+              <a href="/auth/signin" className="bg-blue-950 text-white px-6 py-2 rounded-lg font-medium hover:bg-blue-900 transition text-sm">
                 Get API Key
-              </button>
+              </a>
             </div>
           </div>
         </div>
